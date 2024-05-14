@@ -1,0 +1,14 @@
+{
+  "name": "ipatool.ts",
+  "version": "0.2.0",
+  "description": "Test in Node.js 18.16.1 environment",
+  "main": "dist/index.js",
+  "type": "module",
+  "dependencies": {
+    "fetch-cookie": "^3.0.1",
+    "getmac": "^6.6.0",
+    "jszip": "^3.10.1",
+    "node-fetch": "^3.3.2",
+    "plist": "^3.1.0"
+  }
+}
