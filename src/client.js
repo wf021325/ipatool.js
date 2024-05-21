@@ -23,7 +23,7 @@ class Store {
         const resp = await this.fetch(url, {method: 'POST', body, headers: this.Headers});
         const parsedResp = plist.parse(await resp.text());
         //console.log(JSON.stringify(parsedResp));
-        return {...parsedResp, _state: parsedResp.failureType ? 'failure' : 'success'};
+        return {...parsedResp, _state: parsedResp.hasOwnProperty('failureType') ? 'failure' : 'success'};
     }
 
     static async download(appIdentifier, appVerId, Cookie) {
@@ -42,7 +42,7 @@ class Store {
         });
         const parsedResp = plist.parse(await resp.text());
         //console.log(JSON.stringify(parsedResp));
-        return {...parsedResp, _state: parsedResp.failureType ? 'failure' : 'success'};
+        return {...parsedResp, _state: parsedResp.hasOwnProperty('failureType') ? 'failure' : 'success'};
     }
 
 }
