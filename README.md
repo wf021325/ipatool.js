@@ -4,6 +4,7 @@ https://github.com/beerpiss/ipatool.ts
 
 ## 功能
 只有下载ipa功能，没有查询版本号，和购买功能
+
 下载【新版、旧版、包含已经下架的新旧版APP】，前提是自己曾经下载过
 
 
