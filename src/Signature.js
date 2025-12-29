@@ -1,59 +1,92 @@
-import { createWriteStream, readFileSync } from 'fs';
-import JSZip from 'jszip';
+import { promises as fsPromises, createReadStream, createWriteStream } from 'fs';
+import {finished} from 'stream/promises';
+import { createHash } from 'crypto';
+import StreamZip from 'node-stream-zip';
+import archiver from 'archiver';
 import plist from 'plist';
 
-export async function readZip(path) {
-    const content = readFileSync(path);
-    const z = await JSZip.loadAsync(content);
-    return z;
-}
-
 export class SignatureClient {
-    constructor(songList0, email) {
-        this.archive = new JSZip();
-        this.filename = '';
-        this.metadata = { ...songList0.metadata, 'apple-id': email, userName: email, 'appleId': email };
-        this.signature = songList0.sinfs.find(sinf => sinf.id === 0);
-        if (!this.signature) throw new Error('Invalid signature.');
-        this.email = email;
+    constructor(songInfo, email) {
+        this.expectedMd5 = songInfo?.md5;
+        this.metadata = {...songInfo.metadata, 'apple-id': email, userName: email, 'appleId': email, 'com.apple.iTunesStore.downloadInfo': {'accountInfo': {'AppleID': email}}};
+        this.signature = songInfo?.sinfs[0]?.sinf;
+        if (!this.signature) {
+            const e = new Error('软件签名：[X] 初始化失败: 无效的签名数据 (Invalid signature data.)');
+            e.prefix = '软件签名：';
+            throw e;
+        }
     }
 
-    async loadFile(path) {
-        this.archive = await readZip(path);
-        this.filename = path;
-    }
-
-    appendMetadata() {
-        const metadataPlist = plist.build(this.metadata);
-        this.archive.file('iTunesMetadata.plist', Buffer.from(metadataPlist, 'utf8'));
-        return this;
-    }
-
-    async appendSignature() {
-        const manifestFile = this.archive.file(/\.app\/SC_Info\/Manifest\.plist$/)[0];
-        if (!manifestFile) throw new Error('Invalid app bundle.');
-
-        const manifestContent = await manifestFile.async('string');
-        const manifest = plist.parse(manifestContent || '<plist></plist>');
-
-        const sinfPath = manifest.SinfPaths?.[0];
-        if (!sinfPath) throw new Error('Invalid signature.');
-
-        const appBundleName = manifestFile.name.split('/')[1].replace(/\.app$/, '');
-        const signatureTargetPath = `Payload/${appBundleName}.app/${sinfPath}`;
-
-        this.archive.file(signatureTargetPath, Buffer.from(this.signature.sinf, 'base64'));
-        return this;
-    }
-
-    async write() {
-        const outputStream = createWriteStream(this.filename);
+    async calculateMD5(filePath) {
         return new Promise((resolve, reject) => {
-            this.archive
-                .generateNodeStream({ streamFiles: true, compression: 'DEFLATE', compressionOptions: { level: 9 } })
-                .pipe(outputStream)
-                .on('finish', resolve)
-                .on('error', reject);
+            try {
+                const hash = createHash('md5');
+                const stream = createReadStream(filePath);
+                stream.on('data', data => hash.update(data));
+                stream.on('end', () => resolve(hash.digest('hex').toLowerCase()));
+                stream.on('error', err => {
+                    console.error('MD5 计算读取失败:', err);
+                    reject(err);
+                });
+            } catch (err) {
+                reject(err);
+            }
         });
+    }
+
+    async sign(ipaPath) {
+        if (this.expectedMd5) {
+            console.log(`文件校验：正在校验 MD5 (文件较大，请稍候...)...`);
+            const currentMd5 = await this.calculateMD5(ipaPath);
+            if (currentMd5 !== this.expectedMd5.toLowerCase()) {
+                const e = new Error(`文件校验：[X] MD5 校验失败！预期: ${this.expectedMd5}, 实际: ${currentMd5}`);
+                e.prefix = '文件校验：';
+                throw e;
+            }
+            console.log('文件校验：[OK] 原始文件 MD5 校验通过');
+        }
+
+        console.log('软件签名：... 正在处理 IPA 文件...');
+        const tempIpaPath = ipaPath + '.tmp';
+        let readZip;
+        let success = false;
+        try {
+            readZip = new StreamZip.async({file: ipaPath});
+            const output = createWriteStream(tempIpaPath);
+            const archive = archiver('zip', {zlib: {level: 1}});
+            archive.pipe(output);
+            const entries = await readZip.entries();
+            const mainAppSuppRegex = /^Payload\/[^\/]+\.app\/SC_Info\/[^\/]+\.supp$/i;
+            const candidates = Object.values(entries).filter(entry => mainAppSuppRegex.test(entry.name));
+            if (candidates.length === 0) {
+                const e = new Error('软件签名：[X] 无效的 App 包: 未找到主程序的 SC_Info/*.supp 签名占位文件');
+                e.prefix = '软件签名：';
+                throw e;
+            }
+            const suppFileEntry = candidates.sort((a, b) => a.name.length - b.name.length)[0];
+            const signatureTargetPath = suppFileEntry.name.replace(/\.supp$/i, '.sinf');
+            archive.append(Buffer.from(plist.build(this.metadata), 'utf8'), {name: 'iTunesMetadata.plist'});
+            archive.append(Buffer.from(this.signature, 'base64'), {name: signatureTargetPath});
+            for (const entry of Object.values(entries)) {
+                if (entry.isDirectory || entry.name === 'iTunesMetadata.plist' || entry.name === signatureTargetPath) continue;
+                const stream = await readZip.stream(entry.name);
+                archive.append(stream, {name: entry.name});
+            }
+            await archive.finalize();
+            await finished(output);
+            success = true;
+        } catch (error) {
+            if (error && error.prefix) throw error;
+            const e = new Error(`软件签名：[X] 文件签名失败: ${error.message}`);
+            e.prefix = '软件签名：';
+            throw e;
+        } finally {
+            if (readZip) await readZip.close().catch(() => {
+            });
+            if (!success) await fsPromises.unlink(tempIpaPath).catch(() => {
+            });
+        }
+        await fsPromises.rename(tempIpaPath, ipaPath);
+        console.log('软件签名：[OK] 文件签名成功！');
     }
 }

@@ -1,2 +1,4 @@
-node_modules
-app/*.ipa
+/node_modules/
+/.idea/
+/.env
+/app/*.ipa

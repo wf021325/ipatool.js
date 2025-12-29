@@ -1,14 +1,22 @@
 {
-  "name": "ipatool.ts",
+  "name": "ipatool.js",
   "version": "0.2.0",
-  "description": "Test in Node.js 18.16.1 environment",
-  "main": "dist/main.js",
+  "description": "Test in Node.js 20.19.3 environment",
+  "main": "main.js",
   "type": "module",
+  "scripts": {
+    "start": "node main.js"
+  },
   "dependencies": {
-    "fetch-cookie": "^3.0.1",
+    "archiver": "^7.0.1",
+    "axios": "^1.13.1",
+    "axios-cookiejar-support": "^6.0.4",
+    "dotenv": "^17.2.3",
+    "fetch-cookie": "^3.1.0",
     "getmac": "^6.6.0",
-    "jszip": "^3.10.1",
-    "node-fetch": "^3.3.2",
-    "plist": "^3.1.0"
+    "node-stream-zip": "^1.15.0",
+    "p-queue": "^9.0.0",
+    "plist": "^3.1.0",
+    "tough-cookie": "^6.0.0"
   }
 }
